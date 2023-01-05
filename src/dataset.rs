@@ -37,7 +37,6 @@ pub struct Dataset {
     pub(crate) handle: lightgbm_sys::DatasetHandle,
 }
 
-#[link(name = "c")]
 impl Dataset {
     fn new(handle: lightgbm_sys::DatasetHandle) -> Self {
         Self { handle }

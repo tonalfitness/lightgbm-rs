@@ -45,7 +45,7 @@ fn main() {
     // bindgen build
     let bindings = bindgen::Builder::default()
         .header("wrapper.h")
-        .clang_args(&["-x", "c++", "-std=c++11"])
+        .clang_args(&["-x", "c++", "-std=c++14"])
         .clang_arg(format!("-I{}", lgbm_root.join("include").display()))
         .generate()
         .expect("Unable to generate bindings");
@@ -58,6 +58,9 @@ fn main() {
     if target.contains("apple") {
         println!("cargo:rustc-link-lib=c++");
         println!("cargo:rustc-link-lib=dylib=omp");
+        if let Ok(homebrew_libomp_path) = get_homebrew_libpath("libomp") {
+            println!("cargo:rustc-link-search={}", homebrew_libomp_path);
+        }
     } else if target.contains("linux") {
         println!("cargo:rustc-link-lib=stdc++");
         println!("cargo:rustc-link-lib=dylib=gomp");
@@ -70,4 +73,46 @@ fn main() {
     } else {
         println!("cargo:rustc-link-lib=static=_lightgbm");
     }
+}
+
+#[derive(Debug)]
+enum HomebrewError {
+    Brew,
+    Path(String),
+    LibNotFound,
+}
+
+fn get_homebrew_libpath(lib: &str) -> Result<String, HomebrewError> {
+    let cellar_path = Command::new("brew")
+        .args(&["--cellar", lib])
+        .output()
+        .map_err(|_| HomebrewError::Brew)?
+        .stdout;
+
+    let cellar_path = Path::new(
+        std::str::from_utf8(&cellar_path)
+            .map_err(|e| HomebrewError::Path(format!("from_utf8: {}", e)))?
+            .trim(),
+    );
+
+    for dir in cellar_path.read_dir().map_err(|e| {
+        HomebrewError::Path(format!(
+            "read_dir({}): {}",
+            cellar_path.to_string_lossy(),
+            e
+        ))
+    })? {
+        if let Ok(d) = dir {
+            if d.metadata()
+                .map_err(|e| HomebrewError::Path(format!("metadata: {}", e)))?
+                .file_type()
+                .is_dir()
+            {
+                return d.path().join("lib").to_str().map(|s| s.to_string()).ok_or(
+                    HomebrewError::Path(format!("Could not convert path to string")),
+                );
+            }
+        }
+    }
+    Err(HomebrewError::LibNotFound)
 }
