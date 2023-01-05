@@ -59,8 +59,10 @@ impl Dataset {
     pub fn from_mat(data: Vec<Vec<f64>>, label: Vec<f32>) -> Result<Self> {
         let data_length = data.len();
         let feature_length = data[0].len();
-        let params = CString::new("").unwrap();
-        let label_str = CString::new("label").unwrap();
+        let params =
+            CString::new("").map_err(|e| Error::from_other("failed to make cstring", e))?;
+        let label_str =
+            CString::new("label").map_err(|e| Error::from_other("failed to make cstring", e))?;
         let reference = std::ptr::null_mut(); // not use
         let mut handle = std::ptr::null_mut();
         let flat_data = data.into_iter().flatten().collect::<Vec<_>>();
@@ -107,8 +109,10 @@ impl Dataset {
     /// let dataset = Dataset::from_file(&"lightgbm-sys/lightgbm/examples/binary_classification/binary.train");
     /// ```
     pub fn from_file(file_path: &str) -> Result<Self> {
-        let file_path_str = CString::new(file_path).unwrap();
-        let params = CString::new("").unwrap();
+        let file_path_str =
+            CString::new(file_path).map_err(|e| Error::from_other("failed to make cstring", e))?;
+        let params =
+            CString::new("").map_err(|e| Error::from_other("failed to make cstring", e))?;
         let mut handle = std::ptr::null_mut();
 
         lgbm_call!(lightgbm_sys::LGBM_DatasetCreateFromFile(
@@ -194,7 +198,8 @@ impl Dataset {
 
 impl Drop for Dataset {
     fn drop(&mut self) {
-        lgbm_call!(lightgbm_sys::LGBM_DatasetFree(self.handle)).unwrap();
+        lgbm_call!(lightgbm_sys::LGBM_DatasetFree(self.handle))
+            .expect("Call to LGBM_DatasetFree should always succeed");
     }
 }
 
@@ -202,7 +207,7 @@ impl Drop for Dataset {
 mod tests {
     use super::*;
     fn read_train_file() -> Result<Dataset> {
-        Dataset::from_file(&"lightgbm-sys/lightgbm/examples/binary_classification/binary.train")
+        Dataset::from_file("lightgbm-sys/lightgbm/examples/binary_classification/binary.train")
     }
 
     #[test]

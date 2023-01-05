@@ -23,6 +23,12 @@ impl Error {
         Self { desc: desc.into() }
     }
 
+    pub(crate) fn from_other<E: Display>(context: &str, err: E) -> Self {
+        Self {
+            desc: format!("{}: {}", context, err),
+        }
+    }
+
     /// Check the return value from an LightGBM FFI call, and return the last error message on error.
     ///
     /// Return values of 0 are treated as success, returns values of -1 are treated as errors.
@@ -31,16 +37,21 @@ impl Error {
     pub(crate) fn check_return_value(ret_val: i32) -> Result<()> {
         match ret_val {
             0 => Ok(()),
-            -1 => Err(Self::from_lightgbm()),
-            _ => panic!("unexpected return value '{}', expected 0 or -1", ret_val),
+            -1 => Err(Self::from_lightgbm()?),
+            _ => Err(Error::new(format!(
+                "unexpected return value '{}', expected 0 or -1",
+                ret_val
+            ))),
         }
     }
 
     /// Get the last error message from LightGBM.
-    fn from_lightgbm() -> Self {
+    fn from_lightgbm() -> Result<Self> {
         let c_str = unsafe { CStr::from_ptr(lightgbm_sys::LGBM_GetLastError()) };
-        let str_slice = c_str.to_str().unwrap();
-        Self::new(str_slice)
+        let str_slice = c_str
+            .to_str()
+            .map_err(|e| Self::from_other("failed to make string", e))?;
+        Ok(Self::new(str_slice))
     }
 }
 

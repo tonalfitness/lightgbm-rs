@@ -20,11 +20,28 @@ impl Booster {
 
     /// Init from model file.
     pub fn from_file(filename: &str) -> Result<Self> {
-        let filename_str = CString::new(filename).unwrap();
+        let filename_str = CString::new(filename)
+            .map_err(|e| Error::new(format!("Failed to create cstring: {}", e)))?;
         let mut out_num_iterations = 0;
         let mut handle = std::ptr::null_mut();
+
         lgbm_call!(lightgbm_sys::LGBM_BoosterCreateFromModelfile(
             filename_str.as_ptr() as *const c_char,
+            &mut out_num_iterations,
+            &mut handle
+        ))?;
+
+        Ok(Booster::new(handle))
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        let str_bytes = CString::new(bytes)
+            .map_err(|e| Error::new(format!("Failed to create cstring: {}", e)))?;
+        let mut out_num_iterations = 0;
+        let mut handle = std::ptr::null_mut();
+
+        lgbm_call!(lightgbm_sys::LGBM_BoosterLoadModelFromString(
+            str_bytes.as_ptr() as *const c_char,
             &mut out_num_iterations,
             &mut handle
         ))?;
@@ -61,18 +78,21 @@ impl Booster {
         let num_iterations: i64 = if parameter["num_iterations"].is_null() {
             100
         } else {
-            parameter["num_iterations"].as_i64().unwrap()
+            parameter["num_iterations"]
+                .as_i64()
+                .ok_or_else(|| Error::new("failed to unwrap num_iterations"))?
         };
 
         // exchange params {"x": "y", "z": 1} => "x=y z=1"
         let params_string = parameter
             .as_object()
-            .unwrap()
+            .ok_or_else(|| Error::new("failed to convert param to object"))?
             .iter()
             .map(|(k, v)| format!("{}={}", k, v))
             .collect::<Vec<_>>()
             .join(" ");
-        let params_cstring = CString::new(params_string).unwrap();
+        let params_cstring = CString::new(params_string)
+            .map_err(|e| Error::from_other("failed to make cstring", e))?;
 
         let mut handle = std::ptr::null_mut();
         lgbm_call!(lightgbm_sys::LGBM_BoosterCreate(
@@ -107,7 +127,8 @@ impl Booster {
     pub fn predict(&self, data: Vec<Vec<f64>>) -> Result<Vec<Vec<f64>>> {
         let data_length = data.len();
         let feature_length = data[0].len();
-        let params = CString::new("").unwrap();
+        let params =
+            CString::new("").map_err(|e| Error::from_other("failed to create cstring", e))?;
         let mut out_length: c_longlong = 0;
         let flat_data = data.into_iter().flatten().collect::<Vec<_>>();
 
@@ -165,11 +186,11 @@ impl Booster {
         let mut out_buffer_len = 0;
         let out_strs = (0..num_feature)
             .map(|_| {
-                CString::new(" ".repeat(feature_name_length))
-                    .unwrap()
-                    .into_raw() as *mut c_char
+                Ok(CString::new(" ".repeat(feature_name_length))
+                    .map_err(|e| Error::from_other("failed to create cstring", e))?
+                    .into_raw() as *mut c_char)
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>>>()?;
         lgbm_call!(lightgbm_sys::LGBM_BoosterGetFeatureNames(
             self.handle,
             feature_name_length as i32,
@@ -178,10 +199,14 @@ impl Booster {
             &mut out_buffer_len,
             out_strs.as_ptr() as *mut *mut c_char
         ))?;
-        let output: Vec<String> = out_strs
+        let output = out_strs
             .into_iter()
-            .map(|s| unsafe { CString::from_raw(s).into_string().unwrap() })
-            .collect();
+            .map(|s| unsafe {
+                Ok(CString::from_raw(s)
+                    .into_string()
+                    .map_err(|e| Error::from_other("failed to create cstring", e)))?
+            })
+            .collect::<Result<Vec<String>>>()?;
         Ok(output)
     }
 
@@ -200,7 +225,8 @@ impl Booster {
 
     /// Save model to file.
     pub fn save_file(&self, filename: &str) -> Result<()> {
-        let filename_str = CString::new(filename).unwrap();
+        let filename_str =
+            CString::new(filename).map_err(|e| Error::from_other("failed to create cstring", e))?;
         lgbm_call!(lightgbm_sys::LGBM_BoosterSaveModel(
             self.handle,
             0_i32,
@@ -214,7 +240,8 @@ impl Booster {
 
 impl Drop for Booster {
     fn drop(&mut self) {
-        lgbm_call!(lightgbm_sys::LGBM_BoosterFree(self.handle)).unwrap();
+        lgbm_call!(lightgbm_sys::LGBM_BoosterFree(self.handle))
+            .expect("Calling LGBM_BoosterFree should always succeed");
     }
 }
 
@@ -302,6 +329,12 @@ mod tests {
 
     #[test]
     fn from_file() {
-        let _ = Booster::from_file("./test/test_from_file.input");
+        let _ = Booster::from_file("./test/test_from_file.input").unwrap();
+    }
+
+    #[test]
+    fn from_bytes() {
+        let file = fs::read_to_string("./test/test_from_file.input").unwrap();
+        let _ = Booster::from_bytes(file.as_bytes()).unwrap();
     }
 }
