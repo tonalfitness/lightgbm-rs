@@ -210,9 +210,8 @@ impl Booster {
     }
 
     /// Get Feature Names.
-    pub fn feature_name(&self) -> Result<Vec<String>> {
+    pub fn feature_name(&self, feature_name_length: usize) -> Result<Vec<String>> {
         let num_feature = self.num_feature()?;
-        let feature_name_length = 32;
         let mut num_feature_names = 0;
         let mut out_buffer_len = 0;
         let out_strs = (0..num_feature)
@@ -232,6 +231,7 @@ impl Booster {
         ))?;
         let output = out_strs
             .into_iter()
+            .take(num_feature_names as usize)
             .map(|s| unsafe {
                 Ok(CString::from_raw(s)
                     .into_string()
@@ -369,7 +369,7 @@ mod tests {
     fn feature_name() {
         let params = _default_params();
         let bst = _train_booster(&params);
-        let feature_name = bst.feature_name().unwrap();
+        let feature_name = bst.feature_name(32).unwrap();
         let target = (0..28).map(|i| format!("Column_{}", i)).collect::<Vec<_>>();
         assert_eq!(feature_name, target);
     }
