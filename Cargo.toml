@@ -9,13 +9,14 @@ readme = "README.md"
 exclude = [".gitignore", ".gitmodules", "examples", "lightgbm-sys"]
 
 [dependencies]
-lightgbm-sys = { path = "lightgbm-sys", version = "0.3.0" }
-libc = "0.2.81"
-derive_builder = "0.5.1"
+lightgbm-sys = { path = "lightgbm-sys", default-features = false, version = "0.3.0" }
+libc = { version = "0.2.81", default-features = false }
 serde_json = "1.0.59"
 polars = {version = "0.16.0", optional = true}
 
 
 [features]
-default = []
+default = ["runtime"]
 dataframe = ["polars"]
+static = ["lightgbm-sys/static"]
+runtime = ["lightgbm-sys/runtime"]

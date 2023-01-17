@@ -13,5 +13,10 @@ exclude = ["README.md", ".gitlab-ci.yml", ".hgeol", ".gitignore", ".appveyor.yml
 libc = "0.2.81"
 
 [build-dependencies]
-bindgen = "0.56.0"
 cmake = "0.1"
+bindgen = { version = "0.56.0", default-features = false, features = ["logging", "clap", "which-rustfmt"] }
+
+[features]
+default = ["runtime"]
+static = ["bindgen/static"]
+runtime = ["bindgen/runtime"]
