@@ -1,6 +1,6 @@
 use libc::{c_char, c_double, c_longlong, c_void};
-use std;
 use std::ffi::CString;
+use std::{self, ffi::CStr};
 
 use serde_json::Value;
 
@@ -8,9 +8,17 @@ use lightgbm_sys;
 
 use crate::{Dataset, Error, Result};
 
+const DEFAULT_MAX_FEATURE_NAME_SIZE: u64 = 64;
+
 /// Core model in LightGBM, containing functions for training, evaluating and predicting.
 pub struct Booster {
     handle: lightgbm_sys::BoosterHandle,
+}
+
+struct FeatureNames {
+    features: Vec<Vec<u8>>,
+    actual_feature_name_len: u64,
+    num_feature_names: i32,
 }
 
 impl Booster {
@@ -209,36 +217,58 @@ impl Booster {
         Ok(out_len)
     }
 
-    /// Get Feature Names.
-    pub fn feature_name(&self, feature_name_length: usize) -> Result<Vec<String>> {
-        let num_feature = self.num_feature()?;
+    fn _feature_names(&self, num_features: i32, feature_name_size: u64) -> Result<FeatureNames> {
+        let mut features = (0..num_features)
+            .map(|_| (0..feature_name_size).map(|_| 0).collect::<Vec<u8>>())
+            .collect::<Vec<_>>();
+
+        let out_strs = features
+            .iter_mut()
+            .map(|v| v.as_mut_ptr())
+            .collect::<Vec<_>>();
+
         let mut num_feature_names = 0;
-        let mut out_buffer_len = 0;
-        let out_strs = (0..num_feature)
-            .map(|_| {
-                Ok(CString::new(" ".repeat(feature_name_length))
-                    .map_err(|e| Error::from_other("failed to create cstring", e))?
-                    .into_raw() as *mut c_char)
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let mut actual_feature_name_len = 0;
+
         lgbm_call!(lightgbm_sys::LGBM_BoosterGetFeatureNames(
             self.handle,
-            feature_name_length as i32,
+            num_features,
             &mut num_feature_names,
-            num_feature as u64,
-            &mut out_buffer_len,
+            feature_name_size,
+            &mut actual_feature_name_len,
             out_strs.as_ptr() as *mut *mut c_char
         ))?;
-        let output = out_strs
+
+        Ok(FeatureNames {
+            features,
+            actual_feature_name_len,
+            num_feature_names,
+        })
+    }
+
+    /// Get Feature Names.
+    pub fn feature_names(&self) -> Result<Vec<String>> {
+        let num_features = self.num_feature()?;
+
+        let mut feature_result =
+            self._feature_names(num_features, DEFAULT_MAX_FEATURE_NAME_SIZE)?;
+
+        // If the feature name size was larger than the default max, try again with the actual size
+        if feature_result.actual_feature_name_len > DEFAULT_MAX_FEATURE_NAME_SIZE {
+            feature_result =
+                self._feature_names(num_features, feature_result.actual_feature_name_len)?;
+        }
+
+        Ok(feature_result
+            .features
             .into_iter()
-            .take(num_feature_names as usize)
+            .take(feature_result.num_feature_names as usize)
             .map(|s| unsafe {
-                Ok(CString::from_raw(s)
-                    .into_string()
-                    .map_err(|e| Error::from_other("failed to create cstring", e)))?
+                CStr::from_ptr(s.as_ptr() as *const i8)
+                    .to_string_lossy()
+                    .into()
             })
-            .collect::<Result<Vec<String>>>()?;
-        Ok(output)
+            .collect())
     }
 
     // Get Feature Importance
@@ -369,7 +399,7 @@ mod tests {
     fn feature_name() {
         let params = _default_params();
         let bst = _train_booster(&params);
-        let feature_name = bst.feature_name(32).unwrap();
+        let feature_name = bst.feature_names().unwrap();
         let target = (0..28).map(|i| format!("Column_{}", i)).collect::<Vec<_>>();
         assert_eq!(feature_name, target);
     }
