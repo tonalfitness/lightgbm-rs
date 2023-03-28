@@ -13,6 +13,7 @@ const DEFAULT_MAX_FEATURE_NAME_SIZE: u64 = 64;
 /// Core model in LightGBM, containing functions for training, evaluating and predicting.
 pub struct Booster {
     handle: lightgbm_sys::BoosterHandle,
+    param_overrides: CString,
 }
 
 struct FeatureNames {
@@ -22,12 +23,15 @@ struct FeatureNames {
 }
 
 impl Booster {
-    fn new(handle: lightgbm_sys::BoosterHandle) -> Self {
-        Booster { handle }
+    fn new(handle: lightgbm_sys::BoosterHandle, param_overrides: CString) -> Self {
+        Booster {
+            handle,
+            param_overrides,
+        }
     }
 
     /// Init from model file.
-    pub fn from_file(filename: &str) -> Result<Self> {
+    pub fn from_file_with_param_overrides(filename: &str, param_overrides: &str) -> Result<Self> {
         let filename_str = CString::new(filename)
             .map_err(|e| Error::new(format!("Failed to create cstring: {}", e)))?;
         let mut out_num_iterations = 0;
@@ -39,10 +43,19 @@ impl Booster {
             &mut handle
         ))?;
 
-        Ok(Booster::new(handle))
+        Ok(Booster::new(
+            handle,
+            CString::new(param_overrides).map_err(|e| {
+                Error::new(format!("Failed to convert param_overrides to CString: {e}"))
+            })?,
+        ))
     }
 
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+    pub fn from_file(filename: &str) -> Result<Self> {
+        Self::from_file_with_param_overrides(filename, "")
+    }
+
+    pub fn from_bytes_with_param_overrides(bytes: &[u8], param_overrides: &str) -> Result<Self> {
         let str_bytes = CString::new(bytes)
             .map_err(|e| Error::new(format!("Failed to create cstring: {}", e)))?;
         let mut out_num_iterations = 0;
@@ -54,7 +67,16 @@ impl Booster {
             &mut handle
         ))?;
 
-        Ok(Booster::new(handle))
+        Ok(Booster::new(
+            handle,
+            CString::new(param_overrides).map_err(|e| {
+                Error::new(format!("Failed to convert param_overrides to CString: {e}"))
+            })?,
+        ))
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        Self::from_bytes_with_param_overrides(bytes, "")
     }
 
     /// Create a new Booster model with given Dataset and parameters.
@@ -116,7 +138,10 @@ impl Booster {
                 &mut is_finished
             ))?;
         }
-        Ok(Booster::new(handle))
+        Ok(Booster::new(
+            handle,
+            CString::new("").map_err(|e| Error::new(format!("Failed to allocate CString: {e}")))?,
+        ))
     }
 
     /// Predict results for given data.
@@ -135,8 +160,6 @@ impl Booster {
     pub fn predict(&self, data: Vec<Vec<f64>>) -> Result<Vec<Vec<f64>>> {
         let data_length = data.len();
         let feature_length = data[0].len();
-        let params =
-            CString::new("").map_err(|e| Error::from_other("failed to create cstring", e))?;
         let mut out_length: c_longlong = 0;
         let flat_data = data.into_iter().flatten().collect::<Vec<_>>();
 
@@ -159,7 +182,7 @@ impl Booster {
             lightgbm_sys::C_API_PREDICT_NORMAL as i32, // predict_type
             0_i32,                                     // start_iteration
             -1_i32,                                    // num_iteration
-            params.as_ptr() as *const c_char,
+            self.param_overrides.as_ptr() as *const c_char,
             &mut out_length,
             out_result.as_ptr() as *mut c_double
         ))?;
@@ -177,9 +200,6 @@ impl Booster {
     }
 
     pub fn predict_single_row(&self, data: Vec<f64>) -> Result<Vec<f64>> {
-        let params =
-            CString::new("").map_err(|e| Error::from_other("failed to create cstring", e))?;
-
         // get num_class
         let mut num_class = 0;
         lgbm_call!(lightgbm_sys::LGBM_BoosterGetNumClasses(
@@ -199,7 +219,7 @@ impl Booster {
             lightgbm_sys::C_API_PREDICT_NORMAL as i32,
             0_i32,  // start_iteration
             -1_i32, // num_iteration,
-            params.as_ptr() as *const c_char,
+            self.param_overrides.as_ptr() as *const c_char,
             &mut out_length,
             out_result.as_ptr() as *mut c_double,
         ))?;
