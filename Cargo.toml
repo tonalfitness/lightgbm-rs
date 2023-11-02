@@ -1,4 +1,5 @@
 [package]
+edition = "2021"
 name = "lightgbm"
 version = "0.2.3"
 authors = ["vaaaaanquish <6syun9@gmail.com>"]

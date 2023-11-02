@@ -1,10 +1,9 @@
 use libc::{c_char, c_double, c_longlong, c_void};
 use std::ffi::CString;
+use std::num::TryFromIntError;
 use std::{self, ffi::CStr};
 
 use serde_json::Value;
-
-use lightgbm_sys;
 
 use crate::{Dataset, Error, Result};
 
@@ -254,14 +253,18 @@ impl Booster {
             self.handle,
             num_features,
             &mut num_feature_names,
-            feature_name_size,
+            feature_name_size
+                .try_into()
+                .map_err(|e: TryFromIntError| Error::new(e.to_string()))?,
             &mut actual_feature_name_len,
             out_strs.as_ptr() as *mut *mut c_char
         ))?;
 
         Ok(FeatureNames {
             features,
-            actual_feature_name_len,
+            actual_feature_name_len: actual_feature_name_len
+                .try_into()
+                .map_err(|e: TryFromIntError| Error::new(e.to_string()))?,
             num_feature_names,
         })
     }

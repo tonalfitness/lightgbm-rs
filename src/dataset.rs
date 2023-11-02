@@ -1,6 +1,4 @@
 use libc::{c_char, c_void};
-use lightgbm_sys;
-use std;
 use std::ffi::CString;
 
 #[cfg(feature = "dataframe")]

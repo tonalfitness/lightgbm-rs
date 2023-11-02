@@ -4,8 +4,6 @@ use std::error;
 use std::ffi::CStr;
 use std::fmt::{self, Debug, Display};
 
-use lightgbm_sys;
-
 #[cfg(feature = "dataframe")]
 use polars::prelude::*;
 
